@@ -2,7 +2,7 @@
 #include <iostream>
 #include <string>
 
-//报告类
+//report class
 struct Report
 {
 	unsigned int type;
@@ -10,7 +10,7 @@ struct Report
 };
 
 
-//态势类
+//posture class
 struct Posture
 {
 	unsigned int type;

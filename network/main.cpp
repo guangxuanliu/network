@@ -104,11 +104,11 @@ int main()
 		ioc.run();
 	});
 
-	//·¢ËÍ
+	//send test
 	int i = 0;
 	while (true)
 	{
-		this_thread::sleep_for(std::chrono::seconds(1));
+		this_thread::sleep_for(std::chrono::milliseconds(10));
 		if (++i % 2)
 			writeReport(c);
 		else
