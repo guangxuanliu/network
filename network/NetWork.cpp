@@ -1,7 +1,7 @@
 #include "NetWork.h"
 
-client::client()
-	:socket_(io_context_)
+client::client(asio::io_context& ioc)
+	:io_context_(ioc),socket_(ioc)
 {
 }
 
@@ -10,26 +10,29 @@ void client::connect(std::string ip, unsigned short port)
 	asio::ip::tcp::resolver r(io_context_);
 	auto endpoints = r.resolve(ip, std::to_string(port));
 
-	asio::async_connect(socket_, endpoints, 
-		std::bind(connectionHandler_,std::placeholders::_1));
-
-	t = std::thread([this]() {
-		io_context_.run();
-	});
-
-	t.join();
+	asio::async_connect(socket_, endpoints,
+		//std::bind(connectionHandler_,std::placeholders::_1)
+		[this](const std::error_code err,asio::ip::tcp::endpoint end) {
+		if (!err)
+		{
+			do_read_header();
+			connectionHandler_(err);
+		}
+	}
+	);
 }
 
 void client::write(std::vector<char> buffer)
 {
+
+	sendBuffer = buffer;
 	char sz[4] = { 0 };
-	int length = buffer.size();
+	int length = sendBuffer.size();
 	memcpy(sz, &length, sizeof(length));
-	buffer.insert(buffer.begin(), sz, sz + sizeof(sz));
+	sendBuffer.insert(sendBuffer.begin(), sz, sz + sizeof(sz));
 
-	asio::async_write(socket_, asio::buffer(buffer),
+	asio::async_write(socket_, asio::buffer(sendBuffer),
 		std::bind(writeHandler_, std::placeholders::_1, std::placeholders::_2));
-
 }
 
 void client::read()
@@ -44,15 +47,14 @@ client::~client()
 
 void client::do_read_header()
 {
-	char buffer[4] = { 0 };
 	asio::async_read(socket_,
-		asio::buffer(buffer, sizeof(unsigned)),
-		[this,&buffer](std::error_code ec, std::size_t /*length*/)
+		asio::buffer(header, 4),
+		[this](std::error_code ec, std::size_t /*length*/)
 	{
 		if (!ec)
 		{
 			int length = 0;
-			memcpy(&length, buffer, sizeof(length));
+			memcpy(&length, header, sizeof(length));
 			std::cout << "length:" << length << std::endl;
 			do_read_body(length);
 		}
@@ -74,6 +76,7 @@ void client::do_read_body(int length)
 		if (!ec)
 		{
 			std::cout << "received body length: " << length << std::endl;
+			readHandler_(receiveBuffer,ec);
 			do_read_header();
 		}
 		else
