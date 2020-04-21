@@ -2,56 +2,108 @@
 #include <asio-1.12.2/asio.hpp>
 #include "message.h"
 #include <vector>
+#include <deque>
 #include <memory>
+#include <string>
 
-class client 
+using std::cout; 
+using std::cerr;
+using std::endl;
+using std::error_code;
+using std::vector;
+using std::deque;
+using std::string;
+using std::shared_ptr;
+using std::thread;
+
+class session
 {
 public:
-	typedef std::function<void(const std::error_code& err)> ConnectionHandler;
-	typedef std::function<void(const std::error_code& err, size_t length)> WriteHandler;
-	typedef std::function<void(std::vector<char> receiveBuffer,const std::error_code& err)> ReadHandler;
+	typedef std::function<void(vector<char> &receiveBuffer)> ReadHandler;
 
 public:
-	client(asio::io_context& ioc);
-
-	void connect(std::string ip,unsigned short port);
-
-	void write(std::vector<char> buffer);
-
-	void read();
-
-	void registerConnectionHandler(const ConnectionHandler& handler)
+	session(asio::io_context &ioc)
+		:strand_(ioc), socket_(ioc)
 	{
-		connectionHandler_ = handler;
+		receiveHeaderBuffer_.resize(sizeof(MESSAGE_HEADER));
+		writeHeaderBuffer_.resize(sizeof(MESSAGE_HEADER));
 	}
 
-	void registerWriteHandler(const WriteHandler& handler)
+	~session()
 	{
-		writeHandler_ = handler;
+		if (socket_.is_open())
+		{
+			socket_.close();
+		}
 	}
 
-	void registerReadHandler(const ReadHandler& handler)
+	void start(asio::ip::tcp::resolver::results_type endpoints)
+	{
+		asio::async_connect(socket_, endpoints,
+			asio::bind_executor(strand_,
+				std::bind(&session::handler_connect, this,
+					std::placeholders::_1))
+		);
+	}
+
+	void write(const vector<char> writeMsg);
+
+	void registerReadHandler(ReadHandler handler)
 	{
 		readHandler_ = handler;
 	}
 
-	~client();
-	
 private:
-	void do_read_header();
-	void do_read_body(int length);
+	void handler_connect(const std::error_code &ec);
+
+	void read_header();
+
+	void read_body(int bodyLength);
+
+	void write_header();
+
+	void write_body();
+
+	void close_socket()
+	{
+		socket_.close();
+	}
 
 private:
-	asio::io_context& io_context_;
+	asio::io_context::strand strand_;
 	asio::ip::tcp::socket socket_;
+	vector<char> receiveHeaderBuffer_;
+	vector<char> receiveBodyBuffer_;
 
-	ConnectionHandler connectionHandler_;
-	WriteHandler writeHandler_;
-	ReadHandler readHandler_;
+	vector<char> writeHeaderBuffer_;
+	deque<vector<char>> writeBuffer_;
 
-	char header[4];
-	std::vector<char> sendBuffer;
-	std::vector<char> receiveBuffer;
+	ReadHandler readHandler_ = nullptr;
+};
+
+class client 
+{
+public:
+	static client &GetInstance();
+	void connectToLogin(string &ip, unsigned short port);
+
+	void setThreadNum(unsigned int num);
+
+	void requestServerInfo();
+
+private:
+	client();
+	~client();
+
+	client(const client &c);
+	const client &operator=(const client &c);
+
+private:
+	asio::io_context ioc_;
+	std::shared_ptr<session> loginSession_;
+	vector<thread> threads_;
+
+	asio::executor_work_guard<asio::io_context::executor_type> workGuard_;
 };
 
 
